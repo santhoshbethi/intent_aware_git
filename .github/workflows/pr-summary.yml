@@ -28,22 +28,22 @@ jobs:
         run: |
           echo "Extracting Jira IDs from PR commits..."
           git log origin/${{ github.base_ref }}..${{ github.sha }} --pretty=format:"%s" > commits.txt
-          python -c "
+          python -c '
 import re
 import sys
 import json
 
-with open('commits.txt', 'r') as f:
+with open("commits.txt", "r") as f:
     commits = f.read()
 
 # Extract all Jira IDs
-pattern = r'\b([A-Z]{2,10}-\d+)\b'
+pattern = r"\b([A-Z]{2,10}-\d+)\b"
 jira_ids = list(set(re.findall(pattern, commits)))
 
-print(f'Found Jira IDs: {jira_ids}')
-with open('jira_ids.json', 'w') as f:
+print(f"Found Jira IDs: {jira_ids}")
+with open("jira_ids.json", "w") as f:
     json.dump(jira_ids, f)
-"
+'
           echo "jira_ids=$(cat jira_ids.json)" >> $GITHUB_OUTPUT
 
       - name: Validate against Jira stories
