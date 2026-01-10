@@ -115,9 +115,9 @@ def generate_pr_comment(validation_data):
     results = validation_data['results']
     
     if not results:
-        return "## 🎯 Jira Story Validation Report\n\nNo Jira IDs found in commit messages."
+        return "## Jira Story Validation Report\n\nNo Jira IDs found in commit messages."
     
-    comment = "## 🎯 Jira Story Validation Report\n\n"
+    comment = "## Jira Story Validation Report\n\n"
     
     for result in results:
         jira_id = result['jira_id']
@@ -130,9 +130,7 @@ def generate_pr_comment(validation_data):
         summary = result['summary']
         status = result['status']
         
-
-        
-        comment += f"###  {jira_id}: {summary}\n"
+        comment += f"### {jira_id}: {summary}\n"
         comment += f"**Alignment Score:** {score}/10 (Confidence: {result['confidence']}%)\n"
         comment += f"**Status:** {status}\n"
         comment += f"**Key Functionality Present:** {'Yes' if result['key_functionality_present'] else 'No'}\n\n"
@@ -224,7 +222,7 @@ def main():
         print("\nCRITICAL: Some stories have severe misalignment!")
         sys.exit(1)
     
-    print("\n All validations passed!")
+    print("\nAll validations passed!")
     sys.exit(0)
 
 
