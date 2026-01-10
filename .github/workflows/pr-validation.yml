@@ -1,0 +1,137 @@
+name: Jira Story Validation
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  validate-commits:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      
+      - name: Install dependencies
+        run: |
+          pip install requests openai python-dotenv
+      
+      - name: Validate PR commits
+        env:
+          JIRA_URL: ${{ secrets.JIRA_URL }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 << 'EOF'
+          import os
+          import sys
+          import re
+          import requests
+          import subprocess
+          from openai import OpenAI
+
+          # Initialize clients
+          jira_url = os.getenv('JIRA_URL')
+          jira_auth = (os.getenv('JIRA_EMAIL'), os.getenv('JIRA_API_TOKEN'))
+          openai_client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+
+          # Get all commits in PR
+          result = subprocess.run(
+              ['git', 'log', '--format=%H|%s', f'origin/{os.getenv("GITHUB_BASE_REF")}..HEAD'],
+              capture_output=True, text=True
+          )
+          
+          commits = []
+          for line in result.stdout.strip().split('\n'):
+              if '|' in line:
+                  sha, msg = line.split('|', 1)
+                  commits.append({'sha': sha, 'message': msg})
+
+          # Validate each commit
+          results = []
+          critical_issues = False
+          
+          for commit in commits:
+              msg = commit['message']
+              
+              # Extract Jira ID
+              match = re.search(r'\b([A-Z]{2,10}-\d+)\b', msg)
+              if not match:
+                  results.append(f"⚠️ No Jira ID in: {msg[:50]}")
+                  continue
+              
+              jira_id = match.group(1)
+              
+              # Fetch Jira issue
+              try:
+                  response = requests.get(f"{jira_url}/rest/api/3/issue/{jira_id}", auth=jira_auth, timeout=10)
+                  response.raise_for_status()
+                  issue = response.json()
+                  summary = issue['fields']['summary']
+                  description = issue['fields'].get('description', {})
+                  
+                  # Get commit diff
+                  diff_result = subprocess.run(
+                      ['git', 'show', commit['sha']],
+                      capture_output=True, text=True
+                  )
+                  diff = diff_result.stdout[:4000]
+                  
+                  # AI validation
+                  prompt = f"""Analyze if code changes match the Jira story intent.
+
+          Jira Story: {summary}
+          Description: {str(description)[:500]}
+
+          Code Changes:
+          {diff}
+
+          Score 0-10 (0=completely unrelated, 10=perfect match). Be strict: give 0-2 if key functionality missing.
+
+          Respond with JSON:
+          {{"score": 0-10, "status": "aligned/misaligned", "reasoning": "why", "suggestions": ["list"]}}"""
+
+                  response = openai_client.chat.completions.create(
+                      model="gpt-4o-mini",
+                      messages=[{"role": "user", "content": prompt}],
+                      temperature=0.2,
+                      response_format={"type": "json_object"}
+                  )
+                  
+                  import json
+                  validation = json.loads(response.choices[0].message.content)
+                  score = validation.get('score', 0)
+                  status = validation.get('status', 'unknown')
+                  
+                  if score < 3:
+                      critical_issues = True
+                      results.append(f"❌ {jira_id}: {summary} - Score: {score}/10 (BLOCKED)")
+                  elif score < 5:
+                      results.append(f"⚠️ {jira_id}: {summary} - Score: {score}/10 (Review needed)")
+                  else:
+                      results.append(f"✅ {jira_id}: {summary} - Score: {score}/10")
+                  
+              except Exception as e:
+                  results.append(f"❌ {jira_id}: Error - {str(e)}")
+                  critical_issues = True
+
+          # Post comment to PR
+          pr_number = os.getenv('GITHUB_REF').split('/')[2]
+          comment = "## 🎯 Jira Story Validation Report\n\n" + "\n".join(results)
+          
+          # Exit with error if critical issues
+          if critical_issues:
+              print("CRITICAL: Validation failed")
+              sys.exit(1)
+          
+          print("✅ All validations passed")
+          EOF
