@@ -28,7 +28,7 @@ jobs:
         run: |
           echo "Extracting Jira IDs from PR commits..."
           git log origin/${{ github.base_ref }}..${{ github.sha }} --pretty=format:"%s" > commits.txt
-          python -c '
+          python3 << 'PYTHON_SCRIPT'
 import re
 import sys
 import json
@@ -40,10 +40,10 @@ with open("commits.txt", "r") as f:
 pattern = r"\b([A-Z]{2,10}-\d+)\b"
 jira_ids = list(set(re.findall(pattern, commits)))
 
-print(f"Found Jira IDs: {jira_ids}")
+print("Found Jira IDs:", jira_ids)
 with open("jira_ids.json", "w") as f:
     json.dump(jira_ids, f)
-'
+PYTHON_SCRIPT
           echo "jira_ids=$(cat jira_ids.json)" >> $GITHUB_OUTPUT
 
       - name: Validate against Jira stories
@@ -53,7 +53,7 @@ with open("jira_ids.json", "w") as f:
           JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
-          python -c "
+          python3 << 'PYTHON_SCRIPT'
 import json
 import sys
 import os
@@ -83,7 +83,7 @@ try:
         try:
             # Fetch Jira issue
             issue = jira_client.get_issue(jira_id)
-            print(f'Story: {issue[\"summary\"]}')
+            print(f'Story: {issue["summary"]}')
             
             # Get diff for validation (using PR diff)
             import subprocess
@@ -116,8 +116,8 @@ try:
             
             results.append(result)
             
-            print(f'Score: {result[\"score\"]}/10')
-            print(f'Key Functionality: {result[\"key_functionality_present\"]}')
+            print(f'Score: {result["score"]}/10')
+            print(f'Key Functionality: {result["key_functionality_present"]}')
             
         except Exception as e:
             print(f'Error validating {jira_id}: {e}')
@@ -141,7 +141,7 @@ try:
 except Exception as e:
     print(f'Validation error: {e}')
     sys.exit(1)
-"
+PYTHON_SCRIPT
 
       - name: Comment on PR
         uses: actions/github-script@v6
