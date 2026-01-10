@@ -44,7 +44,7 @@ jobs:
             const fs = require('fs');
             const comment = fs.readFileSync('pr_comment.md', 'utf8');
             
-            github.rest.issues.createComment({
+            await github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
