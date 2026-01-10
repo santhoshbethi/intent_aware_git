@@ -71,7 +71,9 @@ def validate_commits(base_ref, head_sha):
             intent_text = jira_client.format_issue_for_validation(issue)
             validation = validator.validate_intent(intent_text, diff)
             
-            score = validation.get('score', 0)
+            score = validation.get('score') or 0
+            if score is None:
+                score = 0
             
             result = {
                 'jira_id': jira_id,
@@ -154,8 +156,9 @@ def generate_pr_comment(validation_data):
             comment += "\n"
     
     # Summary
-    avg_score = sum(r['score'] for r in results if 'score' in r) / len(results)
-    critical = len([r for r in results if r.get('score', 0) < 3])
+    scores = [r.get('score', 0) or 0 for r in results if 'score' in r]
+    avg_score = sum(scores) / len(scores) if scores else 0
+    critical = len([r for r in results if (r.get('score') or 0) < 3])
     
     comment += "---\n### Summary\n"
     comment += f"- **Average Score:** {avg_score:.1f}/10\n"
