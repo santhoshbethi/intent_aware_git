@@ -4,7 +4,8 @@ import click
 import json
 from datetime import datetime
 from pathlib import Path
-from .utils import get_intent_dir, get_current_intent, save_intent
+from .utils import get_intent_dir, get_current_intent, save_intent, get_git_diff
+from .ai_validator import AIValidator
 
 
 @click.group()
@@ -41,24 +42,102 @@ def start(intent_message):
 
 @cli.command()
 @click.option('-m', '--message', required=True, help='Commit message')
-def commit(message):
-    """Commit changes with intent verification."""
+@click.option('--validate/--no-validate', default=True, help='Validate intent with AI')
+@click.option('--scan-security/--no-scan-security', default=True, help='Scan for security vulnerabilities')
+def commit(message, validate, scan_security):
+    """Commit changes with intent verification and security scanning."""
     current_intent = get_current_intent()
     
     if not current_intent:
         click.echo("⚠️  No active intent found. Start an intent first with 'intent start'")
         return
     
+    # Get the git diff
+    diff = get_git_diff()
+    if not diff:
+        click.echo("⚠️  No staged changes found. Use 'git add' to stage changes first.")
+        return
+    
+    # AI validation if enabled
+    validation_result = None
+    vulnerability_result = None
+    
+    if validate or scan_security:
+        try:
+            validator = AIValidator()
+            click.echo("\n🤖 Analyzing changes with AI...")
+            
+            # Validate intent alignment
+            if validate:
+                click.echo("   → Checking intent alignment...")
+                validation_result = validator.validate_intent(current_intent['message'], diff)
+                
+                if 'error' not in validation_result:
+                    score = validation_result.get('score', 0)
+                    click.echo(f"\n📊 Intent Alignment Score: {score}/10")
+                    
+                    if score < 5:
+                        click.secho("⚠️  LOW ALIGNMENT WARNING", fg='red', bold=True)
+                    elif score < 7:
+                        click.secho("⚠️  Medium alignment", fg='yellow')
+                    else:
+                        click.secho("✓ Good alignment", fg='green')
+                    
+                    if validation_result.get('analysis'):
+                        click.echo(f"\n💡 Analysis:\n{validation_result['analysis']}")
+                    
+                    if validation_result.get('suggestions'):
+                        click.echo(f"\n💭 Suggestions:\n{validation_result['suggestions']}")
+            
+            # Security vulnerability scan
+            if scan_security:
+                click.echo("\n   → Scanning for vulnerabilities...")
+                vulnerability_result = validator.check_vulnerabilities(diff)
+                
+                if 'error' not in vulnerability_result:
+                    severity = vulnerability_result.get('severity', 'NONE')
+                    click.echo(f"\n🔒 Security Severity: {severity}")
+                    
+                    if severity in ['HIGH', 'CRITICAL']:
+                        click.secho(f"⚠️  {severity} SEVERITY VULNERABILITIES FOUND!", fg='red', bold=True)
+                    elif severity == 'MEDIUM':
+                        click.secho("⚠️  Medium severity issues found", fg='yellow')
+                    else:
+                        click.secho("✓ No major security issues detected", fg='green')
+                    
+                    if vulnerability_result.get('vulnerabilities'):
+                        click.echo(f"\n🔍 Vulnerabilities:\n{vulnerability_result['vulnerabilities']}")
+                    
+                    if vulnerability_result.get('recommendations'):
+                        click.echo(f"\n🛡️  Recommendations:\n{vulnerability_result['recommendations']}")
+                    
+                    # Block commit on critical issues
+                    if severity == 'CRITICAL':
+                        click.echo("\n❌ Commit blocked due to CRITICAL security issues!")
+                        click.echo("Please fix the security vulnerabilities before committing.")
+                        return
+        
+        except ValueError as e:
+            click.secho(f"\n⚠️  AI validation disabled: {e}", fg='yellow')
+            click.echo("Continuing without AI validation...")
+        except Exception as e:
+            click.secho(f"\n⚠️  AI validation error: {e}", fg='yellow')
+            click.echo("Continuing without AI validation...")
+    
     # Record the commit
     commit_data = {
         'message': message,
-        'timestamp': datetime.now().isoformat()
+        'timestamp': datetime.now().isoformat(),
+        'validation': validation_result,
+        'security': vulnerability_result
     }
     current_intent['commits'].append(commit_data)
     save_intent(current_intent)
     
-    click.echo(f"✓ Commit recorded: {message}")
+    click.echo(f"\n✓ Commit recorded: {message}")
     click.echo(f"Intent: {current_intent['message']}")
+    click.echo("\nRemember to run 'git commit' to actually commit the changes.")
+
 
 
 @cli.command()
