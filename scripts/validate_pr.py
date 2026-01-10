@@ -8,6 +8,7 @@ import sys
 import json
 import subprocess
 import re
+import requests
 
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -164,9 +165,30 @@ def generate_pr_comment(validation_data):
     return comment
 
 
+def post_pr_comment(comment, repo, pr_number, token):
+    """Post comment to GitHub PR."""
+    url = f"https://api.github.com/repos/{repo}/issues/{pr_number}/comments"
+    headers = {
+        'Authorization': f'token {token}',
+        'Accept': 'application/vnd.github.v3+json'
+    }
+    data = {'body': comment}
+    
+    response = requests.post(url, headers=headers, json=data, timeout=10)
+    
+    if response.status_code == 201:
+        print("Successfully posted PR comment")
+    else:
+        print(f"Failed to post comment: {response.status_code}")
+        print(response.text)
+
+
 def main():
     base_ref = os.getenv('GITHUB_BASE_REF')
     head_sha = os.getenv('GITHUB_SHA')
+    github_token = os.getenv('GITHUB_TOKEN')
+    github_repo = os.getenv('GITHUB_REPOSITORY')
+    pr_number = os.getenv('PR_NUMBER')
     
     if not base_ref or not head_sha:
         print("Error: GITHUB_BASE_REF and GITHUB_SHA required")
@@ -184,6 +206,12 @@ def main():
     comment = generate_pr_comment(validation_data)
     with open('pr_comment.md', 'w') as f:
         f.write(comment)
+    
+    # Post comment to PR if token available
+    if github_token and github_repo and pr_number:
+        post_pr_comment(comment, github_repo, pr_number, github_token)
+    else:
+        print("Skipping PR comment (missing GitHub credentials)")
     
     print("\n" + "="*60)
     print("Validation Complete")
