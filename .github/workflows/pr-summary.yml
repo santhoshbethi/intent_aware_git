@@ -1,0 +1,226 @@
+name: PR Intent Validation
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  validate-intent:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install -e .
+
+      - name: Extract Jira IDs from commits
+        id: jira-ids
+        run: |
+          echo "Extracting Jira IDs from PR commits..."
+          git log origin/${{ github.base_ref }}..${{ github.sha }} --pretty=format:"%s" > commits.txt
+          python -c "
+import re
+import sys
+import json
+
+with open('commits.txt', 'r') as f:
+    commits = f.read()
+
+# Extract all Jira IDs
+pattern = r'\b([A-Z]{2,10}-\d+)\b'
+jira_ids = list(set(re.findall(pattern, commits)))
+
+print(f'Found Jira IDs: {jira_ids}')
+with open('jira_ids.json', 'w') as f:
+    json.dump(jira_ids, f)
+"
+          echo "jira_ids=$(cat jira_ids.json)" >> $GITHUB_OUTPUT
+
+      - name: Validate against Jira stories
+        env:
+          JIRA_URL: ${{ secrets.JIRA_URL }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          python -c "
+import json
+import sys
+import os
+sys.path.insert(0, '.')
+
+from cli.jira_client import JiraClient
+from cli.ai_validator import AIValidator
+from cli.utils import get_git_diff
+
+# Read Jira IDs
+with open('jira_ids.json', 'r') as f:
+    jira_ids = json.load(f)
+
+if not jira_ids:
+    print('No Jira IDs found in commits. All commits should reference a Jira story.')
+    sys.exit(1)
+
+try:
+    jira_client = JiraClient()
+    validator = AIValidator()
+    
+    results = []
+    
+    for jira_id in jira_ids:
+        print(f'\n=== Validating {jira_id} ===')
+        
+        try:
+            # Fetch Jira issue
+            issue = jira_client.get_issue(jira_id)
+            print(f'Story: {issue[\"summary\"]}')
+            
+            # Get diff for validation (using PR diff)
+            import subprocess
+            diff_result = subprocess.run(
+                ['git', 'diff', 'origin/${{ github.base_ref }}...${{ github.sha }}'],
+                capture_output=True,
+                text=True
+            )
+            diff = diff_result.stdout
+            
+            if not diff:
+                print(f'No code changes found')
+                continue
+            
+            # Validate with AI
+            intent_text = jira_client.format_issue_for_validation(issue)
+            validation = validator.validate_intent(intent_text, diff)
+            
+            result = {
+                'jira_id': jira_id,
+                'summary': issue['summary'],
+                'score': validation.get('score', 0),
+                'confidence': validation.get('confidence', 0),
+                'alignment': validation.get('alignment', 'unknown'),
+                'key_functionality_present': validation.get('key_functionality_present', False),
+                'matches': validation.get('matches', []),
+                'discrepancies': validation.get('discrepancies', []),
+                'suggestions': validation.get('suggestions', [])
+            }
+            
+            results.append(result)
+            
+            print(f'Score: {result[\"score\"]}/10')
+            print(f'Key Functionality: {result[\"key_functionality_present\"]}')
+            
+        except Exception as e:
+            print(f'Error validating {jira_id}: {e}')
+            results.append({
+                'jira_id': jira_id,
+                'error': str(e)
+            })
+    
+    # Save results
+    with open('validation_results.json', 'w') as f:
+        json.dump(results, f, indent=2)
+    
+    print('\n=== Validation Complete ===')
+    
+    # Check if any critical issues
+    critical_issues = [r for r in results if r.get('score', 10) < 3]
+    if critical_issues:
+        print(f'\nCRITICAL: {len(critical_issues)} stories have severe misalignment!')
+        sys.exit(1)
+    
+except Exception as e:
+    print(f'Validation error: {e}')
+    sys.exit(1)
+"
+
+      - name: Comment on PR
+        uses: actions/github-script@v6
+        if: always()
+        with:
+          github-token: ${{secrets.GITHUB_TOKEN}}
+          script: |
+            const fs = require('fs');
+            
+            let comment = '## 🎯 Jira Story Validation Report\\n\\n';
+            
+            try {
+              const results = JSON.parse(fs.readFileSync('validation_results.json', 'utf8'));
+              
+              if (results.length === 0) {
+                comment += '⚠️ **No Jira IDs found in commits**\\n\\n';
+                comment += 'All commits should reference a Jira story (e.g., `PROJ-123: commit message`)\\n';
+              } else {
+                for (const result of results) {
+                  if (result.error) {
+                    comment += `### ❌ ${result.jira_id}\\n`;
+                    comment += `**Error:** ${result.error}\\n\\n`;
+                    continue;
+                  }
+                  
+                  const score = result.score || 0;
+                  const emoji = score >= 7 ? '✅' : score >= 5 ? '⚠️' : '❌';
+                  
+                  comment += `### ${emoji} ${result.jira_id}: ${result.summary}\\n\\n`;
+                  comment += `**Alignment Score:** ${score}/10 (Confidence: ${result.confidence}%)\\n`;
+                  comment += `**Status:** ${result.alignment}\\n`;
+                  comment += `**Key Functionality Present:** ${result.key_functionality_present ? 'Yes' : 'No'}\\n\\n`;
+                  
+                  if (result.matches && result.matches.length > 0) {
+                    comment += '**What Aligns:**\\n';
+                    result.matches.forEach(m => comment += `- ${m}\\n`);
+                    comment += '\\n';
+                  }
+                  
+                  if (result.discrepancies && result.discrepancies.length > 0) {
+                    comment += '**Discrepancies:**\\n';
+                    result.discrepancies.forEach(d => comment += `- ${d}\\n`);
+                    comment += '\\n';
+                  }
+                  
+                  if (result.suggestions && result.suggestions.length > 0) {
+                    comment += '**Suggestions:**\\n';
+                    result.suggestions.forEach(s => comment += `- ${s}\\n`);
+                    comment += '\\n';
+                  }
+                  
+                  comment += '---\\n\\n';
+                }
+                
+                // Summary
+                const avgScore = results.reduce((sum, r) => sum + (r.score || 0), 0) / results.length;
+                const critical = results.filter(r => (r.score || 10) < 3).length;
+                const low = results.filter(r => (r.score || 10) >= 3 && (r.score || 10) < 5).length;
+                const good = results.filter(r => (r.score || 10) >= 7).length;
+                
+                comment += '### Summary\\n\\n';
+                comment += `- **Average Score:** ${avgScore.toFixed(1)}/10\\n`;
+                comment += `- **Stories Validated:** ${results.length}\\n`;
+                comment += `- **Critical Issues:** ${critical}\\n`;
+                comment += `- **Low Alignment:** ${low}\\n`;
+                comment += `- **Good Alignment:** ${good}\\n`;
+                
+                if (critical > 0) {
+                  comment += '\\n⚠️ **Action Required:** Critical alignment issues found. Review before merging.\\n';
+                }
+              }
+            } catch (e) {
+              comment += `⚠️ Could not read validation results: ${e.message}\\n`;
+            }
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+
