@@ -71,29 +71,51 @@ class JiraClient:
             
             data = response.json()
             
+            if not data:
+                raise ValueError(f"Empty response from Jira API for issue {issue_key}")
+            
             # Extract relevant fields
             fields = data.get('fields', {})
             
+            if not fields:
+                raise ValueError(f"No fields found in Jira issue {issue_key}")
+            
+            # Helper to safely get nested values
+            def safe_get(obj, key, default=''):
+                val = obj.get(key) if obj else None
+                return val if val is not None else default
+            
             return {
                 'key': data.get('key'),
-                'summary': fields.get('summary', ''),
+                'summary': safe_get(fields, 'summary'),
                 'description': self._extract_description(fields.get('description')),
-                'issue_type': fields.get('issuetype', {}).get('name', ''),
-                'status': fields.get('status', {}).get('name', ''),
-                'priority': fields.get('priority', {}).get('name', ''),
-                'assignee': fields.get('assignee', {}).get('displayName', 'Unassigned'),
+                'issue_type': safe_get(fields.get('issuetype'), 'name'),
+                'status': safe_get(fields.get('status'), 'name'),
+                'priority': safe_get(fields.get('priority'), 'name', 'None'),
+                'assignee': safe_get(fields.get('assignee'), 'displayName', 'Unassigned'),
                 'acceptance_criteria': self._extract_acceptance_criteria(fields.get('description')),
                 'labels': fields.get('labels', []),
-                'components': [c.get('name') for c in fields.get('components', [])],
+                'components': [c.get('name', '') for c in (fields.get('components') or [])],
             }
         
         except requests.exceptions.HTTPError as e:
             if e.response.status_code == 404:
-                raise ValueError(f"Jira issue {issue_key} not found")
+                raise ValueError(f"Jira issue {issue_key} not found. Does it exist in {self.jira_url}?")
             elif e.response.status_code == 401:
-                raise ValueError("Jira authentication failed. Check your credentials.")
+                raise ValueError("Jira authentication failed. Check JIRA_EMAIL and JIRA_API_TOKEN in .env")
+            elif e.response.status_code == 403:
+                raise ValueError(f"Access denied to Jira issue {issue_key}. Check permissions.")
             else:
-                raise ValueError(f"Failed to fetch Jira issue: {str(e)}")
+                raise ValueError(f"HTTP {e.response.status_code}: {e.response.text}")
+        
+        except requests.exceptions.Timeout:
+            raise ValueError(f"Timeout connecting to Jira at {self.jira_url}. Check network/VPN.")
+        
+        except requests.exceptions.ConnectionError as e:
+            raise ValueError(f"Cannot connect to Jira at {self.jira_url}. Check URL and network. Error: {str(e)}")
+        
+        except requests.exceptions.RequestException as e:
+            raise ValueError(f"Network error connecting to Jira: {str(e)}")
         
         except Exception as e:
             raise ValueError(f"Error fetching Jira issue: {str(e)}")

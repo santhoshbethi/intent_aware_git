@@ -6,6 +6,7 @@ from datetime import datetime
 from pathlib import Path
 from .utils import get_intent_dir, get_current_intent, save_intent, get_git_diff
 from .ai_validator import AIValidator
+from .install_hooks import install_hooks
 
 
 @click.group()
@@ -24,7 +25,7 @@ def start(intent_message):
     # Check if there's already an active intent
     current_intent = get_current_intent()
     if current_intent:
-        click.echo(f"⚠️  Active intent already exists: {current_intent['message']}")
+        click.echo(f"Active intent already exists: {current_intent['message']}")
         click.echo("Please close the current intent before starting a new one.")
         return
     
@@ -164,6 +165,10 @@ def close():
     for i, commit in enumerate(current_intent['commits'], 1):
         click.echo(f"  {i}. {commit['message']}")
     click.echo("\n✓ Intent session closed")
+
+
+# Add the install-hooks command to the CLI
+cli.add_command(install_hooks, name='install-hooks')
 
 
 if __name__ == '__main__':
