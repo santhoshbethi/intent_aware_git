@@ -410,27 +410,33 @@ All these work:
 "Add feature (PROJ-123)"
 ```
 
-### Skip Validation
+### Skip Validation (Optional - Rarely Needed)
+
+Most commits work normally without any special markers. Only use these for edge cases:
 
 ```bash
-# Method 1: Environment variable (entire validation)
-SKIP_INTENT_VALIDATION=1 git commit -m "HOTFIX"
+# Normal commit (no skip marker needed)
+git commit -m "PROJ-123: Add OAuth feature"
+# → Validates automatically
 
-# Method 2: Skip marker in commit message (recommended)
-git commit -m "PROJ-123: Quick fix [skip-validation]"
-git commit -m "PROJ-123: Update docs [no-validation]"
-git commit -m "PROJ-123: Config change [skip ci]"
+# Skip validation (only when needed)
+git commit -m "PROJ-123: Emergency hotfix [skip-validation]"
+git commit -m "Update README [no-validation]"
 
-# Method 3: Skip only AI validation (keep Jira check)
-ENABLE_AI_VALIDATION=false git commit -m "PROJ-123: message"
+# Alternative: environment variable
+SKIP_INTENT_VALIDATION=1 git commit -m "Config tweak"
 ```
 
-**When to skip validation:**
-- Hotfixes that need immediate deployment
-- Documentation-only changes
-- Configuration tweaks
-- Dependency updates
-- Infrastructure changes that don't match Jira story intent
+**When to skip (rare cases):**
+- Emergency production hotfixes
+- README/docs updates
+- Version bumps, config changes
+
+**You DON'T need skip markers for:**
+- Normal feature work
+- Bug fixes
+- Code without tests (validation is flexible)
+- Any commit that roughly matches your Jira story
 
 ### Custom Scoring Threshold
 
