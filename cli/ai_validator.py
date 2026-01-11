@@ -110,14 +110,20 @@ class AIValidator:
                     history_context += f"- Past intent: '{h['intent']}' achieved alignment score {h['score']}/10\n"
         
         # Build enhanced prompt with all improvements
-        prompt = f"""You are an expert code reviewer analyzing intent-code alignment. BE EXTREMELY STRICT.
+        prompt = f"""You are an expert code reviewer analyzing intent-code alignment. Be balanced and practical.
 
-CRITICAL SCORING RULES:
-- Score 0-2: Code does NOT implement the stated intent AT ALL (missing expected functionality)
+SCORING RULES:
+- Score 0-2: Code does NOT implement the stated intent AT ALL (completely unrelated changes)
 - Score 3-4: Code barely relates to intent, mostly unrelated changes
-- Score 5-6: Partial implementation, significant gaps or extra unrelated changes
-- Score 7-8: Good implementation with minor gaps or slight scope issues
-- Score 9-10: Perfect match, code fully implements stated intent
+- Score 5-6: Partial implementation, missing some expected functionality
+- Score 7-8: Good implementation, core functionality present (tests are optional, not required)
+- Score 9-10: Excellent match, code fully implements stated intent
+
+IMPORTANT NOTES:
+- Tests are OPTIONAL. If implementation is solid, score 7-10 even without tests
+- Focus on whether CORE FUNCTIONALITY matches intent, not on completeness
+- Configuration changes, refactoring, and infrastructure work are valid if they serve the intent
+- Don't penalize for missing tests, documentation, or "nice-to-haves"
 
 EXAMPLES OF SCORING:
 
@@ -127,16 +133,17 @@ Changes: Fixed typo in README, updated package version
 Analysis: NO OAuth2 code added. Completely unrelated changes.
 Score: 0/10 
 
-Example 2 - ZERO ALIGNMENT (Score: 0-1):
-Intent: "Implement user login with OAuth"
-Changes: Added empty function stub, no actual OAuth implementation
-Analysis: Intent mentions OAuth but NO OAuth libraries, flows, or authentication logic present.
-Score: 1/10
-
-Example 3 - High Alignment (Score: 9):
+Example 2 - Good Implementation Without Tests (Score: 8):
 Intent: "Add email validation"
-Changes: Added regex validator, unit tests, integrated into form
-Score: 9/10 ✓
+Changes: Added regex validator, integrated into form (no tests included)
+Analysis: Core validation logic present and functional. Tests not required.
+Score: 8/10
+
+Example 3 - Infrastructure Work (Score: 7):
+Intent: "Set up CI/CD pipeline"
+Changes: Added GitHub Actions workflow, Docker config
+Analysis: Implementation matches infrastructure intent.
+Score: 7/10
 
 Example 4 - Scope Creep (Score: 3):
 Intent: "Fix button styling"
@@ -147,7 +154,7 @@ INSTRUCTIONS FOR ANALYZING GIT DIFFS:
 - Lines with '+' are NEW CODE ADDED - analyze these carefully!
 - Lines with '-' are CODE REMOVED
 - Lines without +/- are CONTEXT (unchanged)
-- BE CRITICAL: If intent says "add X" but X is NOT in the diff, score MUST be 0-2!
+- Focus on whether CORE functionality is present, not perfection
 
 CURRENT ANALYSIS:
 Language Detected: {language}
@@ -156,14 +163,14 @@ Developer's Stated Intent: "{intent_message}"{history_context}
 Code Changes (Git Diff):
 {code_diff}
 
-STEP-BY-STEP STRICT ANALYSIS:
-1. Identify the KEY FUNCTIONALITY mentioned in the intent (e.g., "OAuth", "email validation", "login")
-2. Search the diff for evidence of that functionality (libraries, functions, logic)
-3. If KEY FUNCTIONALITY is MISSING → Score MUST be 0-2 (NOT 5, NOT 7!)
-4. If KEY FUNCTIONALITY exists but incomplete → Score 3-6
-5. If KEY FUNCTIONALITY fully implemented → Score 7-10
+STEP-BY-STEP ANALYSIS:
+1. Identify the KEY FUNCTIONALITY mentioned in the intent
+2. Search the diff for evidence of that functionality
+3. If KEY FUNCTIONALITY is present and working → Score 7-10
+4. If KEY FUNCTIONALITY partially present → Score 4-6
+5. If completely unrelated → Score 0-3
 
-BE BRUTALLY HONEST. Don't give high scores for good intentions - only for actual implementation.
+Be practical and focus on intent alignment, not code perfection.
 
 RESPOND IN VALID JSON FORMAT ONLY:
 {{

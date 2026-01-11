@@ -61,16 +61,18 @@ def print_info(message):
 def main():
     """Main hook logic."""
     
-    # Check if we should skip validation
-    skip_validation = os.environ.get('SKIP_INTENT_VALIDATION', '').lower() in ['1', 'true', 'yes']
-    if skip_validation:
-        print_warning("Intent validation skipped (SKIP_INTENT_VALIDATION=1)")
-        return 0
-    
     commit_message = get_commit_message()
     if not commit_message:
         print_error("Could not read commit message")
         return 1
+    
+    # Check if validation should be skipped
+    skip_validation = os.environ.get('SKIP_INTENT_VALIDATION', '').lower() in ['1', 'true', 'yes']
+    skip_markers = ['[skip-validation]', '[no-validation]', '[skip ci]']
+    
+    if skip_validation or any(marker in commit_message.lower() for marker in skip_markers):
+        print_info("Intent validation skipped")
+        return 0
     
     print_info("Validating commit against Jira story...")
     

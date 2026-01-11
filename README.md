@@ -413,12 +413,24 @@ All these work:
 ### Skip Validation
 
 ```bash
-# Skip all validation (emergency)
+# Method 1: Environment variable (entire validation)
 SKIP_INTENT_VALIDATION=1 git commit -m "HOTFIX"
 
-# Skip only AI (use Jira validation only)
+# Method 2: Skip marker in commit message (recommended)
+git commit -m "PROJ-123: Quick fix [skip-validation]"
+git commit -m "PROJ-123: Update docs [no-validation]"
+git commit -m "PROJ-123: Config change [skip ci]"
+
+# Method 3: Skip only AI validation (keep Jira check)
 ENABLE_AI_VALIDATION=false git commit -m "PROJ-123: message"
 ```
+
+**When to skip validation:**
+- Hotfixes that need immediate deployment
+- Documentation-only changes
+- Configuration tweaks
+- Dependency updates
+- Infrastructure changes that don't match Jira story intent
 
 ### Custom Scoring Threshold
 
