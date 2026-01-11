@@ -19,7 +19,6 @@ try:
     repo_root = result.stdout.strip()
     sys.path.insert(0, repo_root)
 except:
-    print("[ERROR] Could not determine git repository root")
     sys.exit(1)
 
 from cli.jira_client import JiraClient
