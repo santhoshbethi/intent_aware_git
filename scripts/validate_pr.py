@@ -59,6 +59,8 @@ def validate_commits(base_ref, head_sha):
         print("No code changes found")
         return {'results': [], 'critical_issues': False}
     
+    print(f"Diff size: {len(diff)} characters")
+    
     for jira_id in jira_ids:
         print(f"\n=== Validating {jira_id} ===")
         
@@ -70,6 +72,8 @@ def validate_commits(base_ref, head_sha):
             # Validate with AI
             intent_text = jira_client.format_issue_for_validation(issue)
             validation = validator.validate_intent(intent_text, diff)
+            
+            print(f"Validation response: {validation}")
             
             score = validation.get('score') or 0
             if score is None:
